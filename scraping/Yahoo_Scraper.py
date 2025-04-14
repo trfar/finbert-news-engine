@@ -19,7 +19,7 @@ class YahooScraper:
         """Sets up the WebDriver"""
         if self.driver_choice == 'chrome':
             options = ChromeOptions()
-            options.add_argument('--headless')
+            # options.add_argument('--headless')
             return webdriver.Chrome(options=options)
         elif self.driver_choice == 'firefox':
             options = FirefoxOptions()
@@ -36,7 +36,8 @@ class YahooScraper:
         html = self.driver.page_source # Extracting the HTML (Static Snapshot)
         soup = BeautifulSoup(html, 'html.parser') # Parsing with BeautifulSoup
         # Getting the Title and Body
-        title = title_div = soup.find('div', class_=self.title_class).text
+        title = soup.find('div', class_=self.title_class).text
+        symbol = soup.find('span', class_='symbol')
         paragraphs = soup.select(f'div[class*="{self.body_class}"] p')
         body = '\n'.join(p.text for p in paragraphs)
         datetime = soup.find('time', class_=self.datetime_class)['datetime']
@@ -47,6 +48,7 @@ class YahooScraper:
         ## Returning the Results
         return {
             'title': title,
+            'symbol': symbol.text,
             'body': body,
             'datetime': datetime,
             'url': current_url,
@@ -54,9 +56,10 @@ class YahooScraper:
         }
     
 if __name__ == "__main__":
-    target_url = "https://finance.yahoo.com/news/tsmc-tsm-expands-ai-foundry-183616861.html"
+    target_url = "https://finance.yahoo.com/news/amazon-could-beat-tesla-massive-072500717.html"
     scraper = YahooScraper(target_url, driver='chrome').scrape()
     print(scraper['title'])
+    print(scraper['symbol'])
     print(scraper['body'])
     print(scraper['datetime'])
     print(scraper['url'])
