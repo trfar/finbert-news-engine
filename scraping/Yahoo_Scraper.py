@@ -3,6 +3,7 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from bs4 import BeautifulSoup
 import time
+#ash was here
 
 class YahooScraper:
     def __init__(self, driver='chrome'):
