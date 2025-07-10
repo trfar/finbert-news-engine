@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+from datetime import datetime, timedelta
 
 class DataProcessor:
     """Class to Process Data and Save to Master CSV"""
@@ -50,8 +51,10 @@ class DataProcessor:
                     'symbol': row['symbol'],
                     'body': sentence,
                     'datetime': row['datetime'],
+                    'todaysDate': row['todaysDate'],
                     'url': row['url'],
-                    'source': row['source']
+                    'source': row['source'],
+                    'sentiment': None
                 }
                 expanded_rows.append(new_row)
 
@@ -60,3 +63,41 @@ class DataProcessor:
 
         # Recreate the File
         expanded_df.to_csv(self.model_CSV, mode='w', header=True, index=False)
+
+    def clean_csv_by_date(self, csv_path, date_column='datetime', days=3):
+        """
+        Cleans the given CSV by removing rows older than `days` based on `date_column`.
+        Overwrites the CSV with only recent rows.
+
+        Parameters:
+            csv_path (str): Path to the CSV to clean.
+            days (int): Number of days to retain.
+        """
+        ## Make sure the CSV Exists and it can be Read
+        if not os.path.exists(csv_path):
+            print(f"[INFO] File not found: {csv_path}")
+            return
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as e:
+            print(f"[ERROR] Failed to read {csv_path}: {e}")
+            return
+        
+        ## Check if the Date Column Exists
+        if "todaysDate" not in df.columns:
+            print(f"[WARNING] Column '{date_column}' not found in {csv_path}")
+            return
+
+        ## Correcting Date Column and Filtering
+        # Convert to datetime safely
+        df[date_column] = pd.to_datetime(df[date_column], errors='coerce')
+        # Drop NaT rows and apply cutoff
+        cutoff = datetime.now() - timedelta(days=days)
+        df = df[df[date_column] >= cutoff]
+
+        ## Exporting the CSV
+        try:
+            df.to_csv(csv_path, index=False)
+            print(f"[SUCCESS] Cleaned {csv_path}. Remaining rows: {len(df)}")
+        except Exception as e:
+            print(f"[ERROR] Failed to write cleaned data to {csv_path}: {e}")

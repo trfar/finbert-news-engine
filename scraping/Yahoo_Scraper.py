@@ -3,16 +3,22 @@ from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from bs4 import BeautifulSoup
 import time
+import os
+import pandas as pd
+from datetime import datetime
 #ash was here
 
 class YahooScraper:
     def __init__(self, driver='chrome'):
         """Initializes the YahooScraper"""
+        self.archive_CSV = "archive.csv" 
         self.driver_choice = driver
-        self.title_class = 'cover-title'
+        self.title_class = 'cover-title yf-1rjrr1'
+        self.ticker_caurousel_class = 'carousel-top'
         self.body_class = "body"
-        self.datetime_class = 'byline-attr-meta-time'
+        self.dateTime_class = 'byline-attr-meta-time'
         self.source = "Yahoo Finance"
+        self.symbol_class = 'symbol yf-90gdtp'
 
     def setup_driver(self):
         """Sets up the WebDriver"""
@@ -32,32 +38,35 @@ class YahooScraper:
             raise ValueError(f"Unsupported driver: {self.driver_choice}")
         
     def scrape_data(self, target_url):
+        """Scrapes a Page for Financial Data"""
+        ## Setup the WebDriver
         self.driver = self.setup_driver()
-        """Scrapes the Yahoo Finance Page"""
         self.driver.get(target_url) # Open the target URL
-        time.sleep(3) # Wait for JavaScript to render
+        time.sleep(2) # Wait for JavaScript to render
+
         ## Extracting the Page Source and Parsing with BeautifulSoup
         html = self.driver.page_source # Extracting the HTML (Static Snapshot)
         soup = BeautifulSoup(html, 'html.parser') # Parsing with BeautifulSoup
+
         ## Verifying Single Symbol Article
-        print(target_url)
-        ticker_carousel = soup.find('div', class_='carousel-top') # Find the main ticker carousel container
+        print(f"Parsing: {target_url}")
+        ticker_carousel = soup.find('div', class_=self.ticker_caurousel_class) # Find the main ticker carousel container
         if not ticker_carousel:
-            print(f"❌ Skipping {target_url} — No ticker carousel found.")
+            print(f"ERROR: Skipping {target_url} — No ticker carousel found.")
             self.driver.quit()
             return None
-        symbol_tags = ticker_carousel.find_all('span', class_='symbol yf-1ko1b4u')
+        symbol_tags = ticker_carousel.find_all('span', class_=self.symbol_class) # Find all symbols in the ticker carousel
         if len(symbol_tags) != 1:
             tickers = [tag.text.strip() for tag in symbol_tags]
-            print(f"⚠️ Skipping {target_url} — Multiple tickers found: {tickers}")
+            print(f"ERROR: Skipping {target_url} — Multiple tickers found: {tickers}")
             self.driver.quit()
             return None
         ## Getting the Body and Metadata
-        title = soup.find('div', class_=self.title_class).text
-        symbol = soup.find('span', class_='symbol')
+        title = soup.find('h1', class_=self.title_class).text
+        symbol = soup.find('span', class_=self.symbol_class) # Find the symbol in the ticker carousel
         paragraphs = soup.select(f'div[class*="{self.body_class}"] p')
         body = '\n'.join(p.text for p in paragraphs)
-        datetime = soup.find('time', class_=self.datetime_class)['datetime']
+        dateTime = soup.find('time', class_=self.dateTime_class)['datetime']
         current_url = self.driver.current_url
         ## Closing the Driver
         self.driver.quit()
@@ -66,29 +75,31 @@ class YahooScraper:
             'title': title,
             'symbol': symbol.text,
             'body': body,
-            'datetime': datetime,
+            'datetime': dateTime,
             'url': current_url,
-            'source': self.source
+            'source': self.source,
+            'todaysDate': datetime.now()
         }
     
     def scrape_market_urls(self, num_articles=150, homepage_url='https://finance.yahoo.com/news/'):
         """
         Scrapes the latest article URLs from the Yahoo Finance News Homepage.
         """
+        ## Setup the WebDriver
         self.driver = self.setup_driver()
         self.driver.get(homepage_url)
-        time.sleep(3)  # Allow time for the page to load
+        time.sleep(2)  # Allow time for the page to load
 
+        ## Setting Scrolling and Data Collection
         collected_urls = set()  # Use a set to avoid duplicates
-        scroll_pause = 2 # Pause time between scrolls
         last_height = self.driver.execute_script("return document.body.scrollHeight") # Get Initial Scroll Height
 
-        # Keep scrolling until we have enough unique article links
+        ## Begin Scrolling and Collecting URLs
+        print(f"Collecting URLs from {homepage_url}...")
         while len(collected_urls) < num_articles:
             # Get the full HTML after scroll
             html = self.driver.page_source
             soup = BeautifulSoup(html, 'html.parser')
-
             # Find all anchor tags that link to articles
             for a_tag in soup.find_all('a', class_='subtle-link'): # Subtle Link Class Holds Link Information
                 href = a_tag.get('href') # HREF is Hyperlink Reference
@@ -96,20 +107,33 @@ class YahooScraper:
                     # Construct the full URL
                     full_url = href if href.startswith("http") else f"https://finance.yahoo.com{href}"
                     collected_urls.add(full_url) # Sets Automatically Handle Duplicates
-
             # Scroll to the bottom of the page to load more content
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(scroll_pause)  # Wait for new articles to load
-
+            time.sleep(2)  # Wait for new articles to load
             # Check if new content was loaded
             new_height = self.driver.execute_script("return document.body.scrollHeight")
             if new_height == last_height:
-                print("⚠️ No more content to scroll. Stopping.")
+                print("FINISHED: NO NEW CONTENT LOADED")
                 break  # Stop if no new content is loaded
             last_height = new_height
 
         return list(collected_urls)
         
+    def clean_urls_from_archive(self, urlList):
+        """
+        Removes URLs from self.url_list that are already present in the archive CSV.
+        """
+        if os.path.exists(self.archive_CSV):
+            # Load archive
+            archive_df = pd.read_csv(self.archive_CSV)
+            # Get set of archived URLs for fast lookup
+            archived_urls = set(archive_df['url'])
+            # Filter out duplicates
+            urlList = [url for url in urlList if url not in archived_urls]
+            return urlList
+        else:
+            return urlList
+
 if __name__ == "__main__":
     scraper = YahooScraper(driver='chrome')
     target_url = "https://finance.yahoo.com/news/nuvation-bio-inc-nuvb-top-214015334.html" # Multiple Sentiment Extraction Error
